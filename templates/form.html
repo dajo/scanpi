@@ -1,87 +1,95 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Scan Form</title>
-    <h1>{{ message }}</h1>
+    <title>ScanPi - Document Scanner</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-            max-width: 600px;
-            margin: 0 auto;
-        }
-
-        form {
-            background-color: #f2f2f2;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-
-        label {
-            font-weight: bold;
-            display: block;
-            margin-bottom: 8px;
-        }
-
-        input[type="text"],
-        select {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 15px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-
-        button[type="submit"] {
-            background-color: #4CAF50;
-            color: white;
-            padding: 12px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            width: 100%;
-            font-size: 16px;
-        }
-
-        button[type="submit"]:hover {
-            background-color: #45a049;
-        }
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, select, textarea { width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { background-color: #007cba; color: white; padding: 12px 24px; border: none; cursor: pointer; }
+        button:hover { background-color: #005a85; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .status.success { background-color: #d4edda; color: #155724; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
+        .paperless-section { border: 1px solid #ddd; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .checkbox-group { display: flex; align-items: center; }
+        .checkbox-group input[type="checkbox"] { width: auto; margin-right: 10px; }
     </style>
 </head>
 <body>
-    <h2>Scan Form</h2>
-    <form method="POST">
-        <label for="name">Name:</label>
-        <input type="text" id="name" name="name" required>
+    <div class="container">
+        <h1>Document Scanner</h1>
         
-        <label for="date">Date:</label>
-        <input type="text" id="date" name="date" value="{{ default_date }}" readonly>
+        <div class="status">
+            <strong>Scanner Status:</strong> {{ scanner_status }}<br>
+            <strong>Paperless-ngx:</strong> {{ paperless_status }}
+        </div>
         
-        <label for="mode">Mode:</label>
-        <select id="mode" name="mode">
-            {% for mode in modes %}
-            <option value="{{ mode }}">{{ mode }}</option>
-            {% endfor %}
-        </select>
+        {% if message %}
+        <div class="status success">{{ message }}</div>
+        {% endif %}
         
-        <label for="resolution">Resolution:</label>
-        <select id="resolution" name="resolution">
-            {% for res in resolutions %}
-            <option value="{{ res }}">{{ res }}</option>
-            {% endfor %}
-        </select>
-        
-        <label for="source">Source:</label>
-        <select id="source" name="source">
-            {% for src in sources %}
-            <option value="{{ src }}">{{ src }}</option>
-            {% endfor %}
-        </select>
-        
-        <button type="submit">SCAN</button>
-    </form>
+        <form method="post">
+            <div class="form-group">
+                <label for="date">Date/Time:</label>
+                <input type="text" id="date" name="date" value="{{ default_date }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="name">Document Name:</label>
+                <input type="text" id="name" name="name" placeholder="e.g. invoice, receipt, letter" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="mode">Scan Mode:</label>
+                <select id="mode" name="mode" required>
+                    {% for mode in modes %}
+                    <option value="{{ mode }}">{{ mode }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="source">Scan Sides:</label>
+                <select id="source" name="source" required>
+                    {% for source in sources %}
+                    <option value="{{ source }}">{{ source }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="resolution">Resolution (DPI):</label>
+                <select id="resolution" name="resolution" required>
+                    {% for res in resolutions %}
+                    <option value="{{ res }}" {% if res == "300" %}selected{% endif %}>{{ res }} DPI</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="paperless-section">
+                <h3>Paperless-ngx Integration</h3>
+                
+                <div class="checkbox-group">
+                    <input type="checkbox" id="send_to_paperless" name="send_to_paperless" checked>
+                    <label for="send_to_paperless">Send to Paperless-ngx after scanning</label>
+                </div>
+                
+                <div class="form-group">
+                    <label for="correspondent">Correspondent (optional):</label>
+                    <input type="text" id="correspondent" name="correspondent" placeholder="e.g. John Doe, Acme Corp">
+                </div>
+                
+                <div class="form-group">
+                    <label for="tags">Tags (comma-separated, optional):</label>
+                    <input type="text" id="tags" name="tags" placeholder="e.g. receipt, tax, important">
+                </div>
+            </div>
+            
+            <button type="submit">Start Scan</button>
+        </form>
+    </div>
 </body>
 </html>
