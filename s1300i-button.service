@@ -1,0 +1,22 @@
+[Unit]
+Description=S1300i Scanner Button Monitor
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/s1300i_button_monitor.sh
+Restart=always
+RestartSec=10
+User=jason
+Group=jason
+StandardOutput=journal
+StandardError=journal
+
+# Kill only the main process, not children
+KillMode=process
+
+# Ensure scanner device is accessible
+SupplementaryGroups=scanner lp
+
+[Install]
+WantedBy=multi-user.target
