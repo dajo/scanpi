@@ -1,0 +1,68 @@
+# Docker Compose configuration for ScanPi
+# Copy this file to docker-compose.yml and customize for your environment:
+#   cp docker-compose.yml.sample docker-compose.yml
+#
+# Key settings to customize:
+# - Volume paths (especially /mnt/consume for Paperless integration)
+# - OUTPUT_FORMAT: "pdf" for direct Paperless, "raw" for scan-to-paperless cropping
+# - SCAN_TO_PAPERLESS_DIR: must match between scanpi and scan-to-paperless services
+
+services:
+  scanpi:
+    container_name: scanpi
+    build: .
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./scans:/mnt/scan
+      - /etc/sane.d:/etc/sane.d:ro
+      - /usr/share/sane:/usr/share/sane:ro
+      # Paperless consume directory - adjust path for your setup
+      - /mnt/consume:/mnt/consume
+      # For scan-to-paperless integration (when OUTPUT_FORMAT=raw)
+      - /mnt/scan-to-paperless:/mnt/scan-to-paperless
+    environment:
+      - SANED_NET_HOSTS=localhost
+      - SOURCES=Single-sided,Duplex
+      - MODES=Lineart,Gray,Color
+      - RESOLUTIONS=150,300,600
+      - SCAN_DIRECTORY=/mnt/scan
+      - PAPERLESS_CONSUME_DIR=/mnt/consume
+      # Output format: "pdf" (direct to Paperless) or "raw" (for scan-to-paperless)
+      - OUTPUT_FORMAT=pdf
+      - SCAN_TO_PAPERLESS_DIR=/mnt/scan-to-paperless
+
+  # Optional: scan-to-paperless for automatic document cropping
+  # Uncomment this section if you want smart edge detection for receipts/small documents
+  # scan-to-paperless:
+  #   image: sbrunner/scan-to-paperless
+  #   container_name: scan-to-paperless
+  #   restart: unless-stopped
+  #   volumes:
+  #     # Input: raw images from scanpi (must match SCAN_TO_PAPERLESS_DIR above)
+  #     - /mnt/scan-to-paperless:/source
+  #     # Output: processed PDFs to Paperless consume folder
+  #     - /mnt/consume:/destination
+  #     # Configuration file (runs as root, so /root/.config/)
+  #     - ./scan-to-paperless-config.yaml:/root/.config/scan-to-paperless.yaml:ro
+  #     # Use host timezone
+  #     - /etc/localtime:/etc/localtime:ro
+  #   environment:
+  #     # Set to a path to keep intermediate images for debugging
+  #     - PROGRESS=
+
+  # Optional: Permission fixer for scan-to-paperless output
+  # Uncomment if running scan-to-paperless as root (files created with 600 permissions)
+  # permission-fixer:
+  #   image: alpine
+  #   container_name: permission-fixer
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /mnt/consume:/watch
+  #   command: >
+  #     sh -c "apk add --no-cache inotify-tools &&
+  #            echo 'Watching /watch for new files...' &&
+  #            inotifywait -m -e close_write -e moved_to --format '%w%f' /watch |
+  #            while read file; do
+  #              chmod 644 \"$$file\" 2>/dev/null && echo \"Fixed permissions: $$file\";
+  #            done"

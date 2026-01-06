@@ -1,0 +1,57 @@
+# scan-to-paperless configuration
+# Place this at ~/.config/scan-to-paperless.yaml on the host
+# OR mount it into the container at /config/scan-to-paperless.yaml
+
+# Scan source directory (inside container)
+# Destination uses default /destination which maps to Paperless consume folder
+scan_folder: /source
+
+# Default processing arguments
+default_args:
+  # DPI of scanned images
+  dpi: 300
+
+  # Automatic processing (no manual REMOVE_TO_CONTINUE step)
+  no_remove_to_continue: true
+
+  # Auto-mask: detects document boundaries using HSV color detection
+  auto_mask:
+    enabled: true
+    # For detecting scanner background (gray) instead of document (white)
+    # set inverse_mask to true
+    inverse_mask: true
+    de_noise_morphology: false
+    # Conservative buffer - adds padding around detected document
+    # Increase this value if documents are being cropped too aggressively
+    buffer_size: 40
+    # HSV color range for detection (defaults detect white paper)
+    # lower_hsv_color: [0, 0, 250]
+    # upper_hsv_color: [255, 10, 255]
+
+  # Auto-cut: performs the actual cropping based on auto_mask
+  auto_cut:
+    enabled: true
+
+  # White level normalization - set near-white pixels to pure white
+  # Lower value = more aggressive (200 is moderate, 255 = disabled)
+  cut_white: 220
+
+  # Don't cut black (preserve dark content)
+  cut_black: 0
+
+  # Auto-rotate pages if needed
+  auto_rotate:
+    enabled: true
+
+  # Skip OCR - let Paperless-ngx handle it
+  tesseract:
+    enabled: false
+
+  # Output settings
+  jpeg_quality: 95
+
+# Modes can override default_args for specific scan types
+# modes:
+#   receipt:
+#     auto_mask:
+#       buffer_size: 30  # Tighter crop for receipts

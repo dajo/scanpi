@@ -14,6 +14,11 @@ MODE=${BUTTON_MODE:-"Color"}
 SOURCE=${BUTTON_SOURCE:-"ADF Front"}  # Always single-sided
 TAG=${BUTTON_TAG:-"inbox"}
 
+# Output format: "pdf" (direct to Paperless) or "raw" (images for scan-to-paperless)
+OUTPUT_FORMAT=${BUTTON_OUTPUT_FORMAT:-"pdf"}
+# Directory for raw images when using scan-to-paperless
+SCAN_TO_PAPERLESS_DIR=${BUTTON_SCAN_TO_PAPERLESS_DIR:-"/mnt/scan-to-paperless"}
+
 # Exit if already running
 if [ -f "$LOCKFILE" ]; then
     exit 0
@@ -55,43 +60,87 @@ do_scan() {
     local timestamp=$(date '+%Y%m%d_%H%M%S')
     local temp_dir="/tmp/scan_$$"
     local scanner_device=$(detect_scanner)
-    
+
     if [ -z "$scanner_device" ]; then
         logger -t "$LOG_TAG" "ERROR: Scanner not detected"
         return 1
     fi
-    
-    # Build filename with tag
+
+    # Build base filename with tag
     if [ -n "$TAG" ]; then
-        local output_file="${CONSUME_DIR}/button_scan_${timestamp}__tag-${TAG}.pdf"
+        local base_filename="button_scan_${timestamp}__tag-${TAG}"
     else
-        local output_file="${CONSUME_DIR}/button_scan_${timestamp}.pdf"
+        local base_filename="button_scan_${timestamp}"
     fi
-    
+
     logger -t "$LOG_TAG" "Button pressed - starting single-sided scan"
-    logger -t "$LOG_TAG" "Settings: ${RESOLUTION}dpi, ${MODE}, ${SOURCE}"
-    
+    logger -t "$LOG_TAG" "Settings: ${RESOLUTION}dpi, ${MODE}, ${SOURCE}, Output: ${OUTPUT_FORMAT}"
+
     # Create directories
     mkdir -p "$temp_dir"
-    mkdir -p "$CONSUME_DIR"
-    
+    if [ "$OUTPUT_FORMAT" = "raw" ]; then
+        mkdir -p "$SCAN_TO_PAPERLESS_DIR"
+    else
+        mkdir -p "$CONSUME_DIR"
+    fi
+
     # Wait for scanner to be ready
     sleep 3
-    
-    # Perform scan
+
+    # Perform scan (--page-height 0 enables auto-detection of document length)
     if timeout 60s scanadf \
         --device-name="$scanner_device" \
         --resolution "$RESOLUTION" \
         --mode "$MODE" \
         --source "$SOURCE" \
+        --page-height 0 \
         --output-file "${temp_dir}/page_%04d.pnm" 2>/dev/null; then
-        
+
         if ls "${temp_dir}"/page_*.pnm > /dev/null 2>&1; then
-            if convert "${temp_dir}"/page_*.pnm "$output_file" 2>/dev/null; then
-                chmod 644 "$output_file"
-                logger -t "$LOG_TAG" "Scan completed: $(basename "$output_file")"
+            if [ "$OUTPUT_FORMAT" = "raw" ]; then
+                # Raw output for scan-to-paperless: create folder with images
+                local output_dir="${SCAN_TO_PAPERLESS_DIR}/${base_filename}"
+                mkdir -p "$output_dir"
+
+                # Convert PNM to PNG and move to output directory
+                local page_num=1
+                local image_list=""
+                for page in "${temp_dir}"/page_*.pnm; do
+                    local png_name="page_$(printf '%04d' $page_num).png"
+                    convert "$page" "${output_dir}/${png_name}" 2>/dev/null
+                    image_list="${image_list}  - ${png_name}
+"
+                    ((page_num++))
+                done
+
+                chmod -R 644 "$output_dir"/*.png 2>/dev/null
+
+                # Create config.yaml for scan-to-paperless (extends global config)
+                cat > "${output_dir}/config.yaml" << 'EOF'
+extends: /root/.config/scan-to-paperless.yaml
+images:
+EOF
+                # Append image list (already has proper formatting with newlines)
+                echo -n "${image_list}" >> "${output_dir}/config.yaml"
+                # Add args with no_remove_to_continue (required settings that must be in job config)
+                cat >> "${output_dir}/config.yaml" << 'EOF'
+args:
+  no_remove_to_continue: true
+  tesseract:
+    enabled: false
+EOF
+                chmod 644 "${output_dir}/config.yaml"
+
+                logger -t "$LOG_TAG" "Scan completed: ${base_filename} ($(( page_num - 1 )) pages) -> scan-to-paperless"
             else
-                logger -t "$LOG_TAG" "PDF conversion failed"
+                # PDF output for direct Paperless consumption
+                local output_file="${CONSUME_DIR}/${base_filename}.pdf"
+                if convert "${temp_dir}"/page_*.pnm "$output_file" 2>/dev/null; then
+                    chmod 644 "$output_file"
+                    logger -t "$LOG_TAG" "Scan completed: $(basename "$output_file")"
+                else
+                    logger -t "$LOG_TAG" "PDF conversion failed"
+                fi
             fi
         else
             logger -t "$LOG_TAG" "No pages scanned - ensure paper is loaded"
@@ -99,10 +148,10 @@ do_scan() {
     else
         logger -t "$LOG_TAG" "Scan failed"
     fi
-    
+
     # Cleanup
     rm -rf "$temp_dir"
-    
+
     # Cooldown
     logger -t "$LOG_TAG" "Cooldown period"
     sleep 10
@@ -115,6 +164,7 @@ if [ -z "$initial_device" ]; then
 else
     logger -t "$LOG_TAG" "Scanner detected: $initial_device"
     logger -t "$LOG_TAG" "Mode: Single-sided, ${RESOLUTION}dpi, ${MODE}"
+    logger -t "$LOG_TAG" "Output: ${OUTPUT_FORMAT} -> $([ "$OUTPUT_FORMAT" = "raw" ] && echo "$SCAN_TO_PAPERLESS_DIR" || echo "$CONSUME_DIR")"
     if [ -n "$TAG" ]; then
         logger -t "$LOG_TAG" "Auto-tagging with: $TAG"
     fi

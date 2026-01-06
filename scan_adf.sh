@@ -6,6 +6,11 @@ SEND_TO_PAPERLESS=${SEND_TO_PAPERLESS:-false}
 PAPERLESS_TAGS=${PAPERLESS_TAGS:-""}
 PAPERLESS_CORRESPONDENT=${PAPERLESS_CORRESPONDENT:-""}
 
+# Output format: "pdf" (direct to Paperless) or "raw" (images for scan-to-paperless)
+OUTPUT_FORMAT=${OUTPUT_FORMAT:-"pdf"}
+# Directory for raw images when using scan-to-paperless
+SCAN_TO_PAPERLESS_DIR=${SCAN_TO_PAPERLESS_DIR:-"/mnt/scan-to-paperless"}
+
 touch "$PROCESSING_LOCKFILE"
 
 detect_scanner() {
@@ -112,27 +117,81 @@ if [ "$POWER_STATE" != "[no]" ]; then
     exit 1
 fi
 
-# Scan the document
-scanadf --device-name="$SCANNER_DEVICE" --mode "$MODE" --source "$SCANNER_SOURCE" --resolution "$RESOLUTION" 2>>stderr.log 1>>stdout.log || true
+# Scan the document (--page-height 0 enables auto-detection of document length)
+scanadf --device-name="$SCANNER_DEVICE" --mode "$MODE" --source "$SCANNER_SOURCE" --resolution "$RESOLUTION" --page-height 0 2>>stderr.log 1>>stdout.log || true
 
 if ls image* 1> /dev/null 2>&1; then
     echo "$(date): Scan completed, found images: $(ls image* | wc -l)" >> stderr.log
+    echo "$(date): Output format: $OUTPUT_FORMAT" >> stderr.log
 
-# Convert to pdf (no OCR - Paperless will handle that)
-convert image* "$FILENAME.pdf" 2>>stderr.log 1>>stdout.log
+    if [ "$OUTPUT_FORMAT" = "raw" ]; then
+        # Raw output for scan-to-paperless: create folder with PNG images
+        mkdir -p "$SCAN_TO_PAPERLESS_DIR"
 
-    # Send to paperless if requested
-    if [ "$SEND_TO_PAPERLESS" = "true" ] && [ -d "$PAPERLESS_CONSUME_DIR" ]; then
-        PAPERLESS_FILENAME=$(create_paperless_filename "$FILENAME")
-        cp "$FILENAME.pdf" "$PAPERLESS_CONSUME_DIR/$PAPERLESS_FILENAME" 2>>stderr.log
-
-        if [ $? -eq 0 ]; then
-            echo "$(date): Document sent to Paperless: $PAPERLESS_FILENAME" >> stderr.log
+        # Build folder name with paperless metadata for scan-to-paperless
+        if [ "$PAPERLESS_CORRESPONDENT" != "" ]; then
+            RAW_FOLDER_NAME="${PAPERLESS_CORRESPONDENT}__${FILENAME}"
         else
-            echo "$(date): ERROR - Failed to send document to Paperless" >> stderr.log
+            RAW_FOLDER_NAME="$FILENAME"
         fi
+        if [ "$PAPERLESS_TAGS" != "" ]; then
+            TAGS_FORMATTED=$(echo "$PAPERLESS_TAGS" | sed 's/,/__tag-/g' | sed 's/^/__tag-/')
+            RAW_FOLDER_NAME="${RAW_FOLDER_NAME}${TAGS_FORMATTED}"
+        fi
+
+        OUTPUT_DIR="${SCAN_TO_PAPERLESS_DIR}/${RAW_FOLDER_NAME}"
+        mkdir -p "$OUTPUT_DIR"
+
+        # Convert images to PNG and move to scan-to-paperless directory
+        PAGE_NUM=1
+        IMAGE_LIST=""
+        for img in image*; do
+            PNG_NAME="page_$(printf '%04d' $PAGE_NUM).png"
+            convert "$img" "${OUTPUT_DIR}/${PNG_NAME}" 2>>stderr.log
+            IMAGE_LIST="${IMAGE_LIST}  - ${PNG_NAME}
+"
+            ((PAGE_NUM++))
+        done
+
+        # Create config.yaml for scan-to-paperless (extends global config)
+        cat > "${OUTPUT_DIR}/config.yaml" << 'EOF'
+extends: /root/.config/scan-to-paperless.yaml
+images:
+EOF
+        # Append image list (already has proper formatting with newlines)
+        echo -n "${IMAGE_LIST}" >> "${OUTPUT_DIR}/config.yaml"
+        # Add args with no_remove_to_continue (required settings that must be in job config)
+        cat >> "${OUTPUT_DIR}/config.yaml" << 'EOF'
+args:
+  no_remove_to_continue: true
+  tesseract:
+    enabled: false
+EOF
+        chmod 644 "${OUTPUT_DIR}/config.yaml"
+
+        echo "$(date): Raw images sent to scan-to-paperless: $OUTPUT_DIR ($(( PAGE_NUM - 1 )) pages)" >> stderr.log
+
+        # Also save PDF locally for archive
+        convert image* "$FILENAME.pdf" 2>>stderr.log 1>>stdout.log
+        echo "$(date): Local PDF archive saved: $FILENAME.pdf" >> stderr.log
     else
-        echo "$(date): Document saved locally only" >> stderr.log
+        # PDF output mode (original behavior)
+        # Convert to PDF (no OCR - Paperless will handle that)
+        convert image* "$FILENAME.pdf" 2>>stderr.log 1>>stdout.log
+
+        # Send to paperless if requested
+        if [ "$SEND_TO_PAPERLESS" = "true" ] && [ -d "$PAPERLESS_CONSUME_DIR" ]; then
+            PAPERLESS_FILENAME=$(create_paperless_filename "$FILENAME")
+            cp "$FILENAME.pdf" "$PAPERLESS_CONSUME_DIR/$PAPERLESS_FILENAME" 2>>stderr.log
+
+            if [ $? -eq 0 ]; then
+                echo "$(date): Document sent to Paperless: $PAPERLESS_FILENAME" >> stderr.log
+            else
+                echo "$(date): ERROR - Failed to send document to Paperless" >> stderr.log
+            fi
+        else
+            echo "$(date): Document saved locally only" >> stderr.log
+        fi
     fi
 
     # Cleanup intermediate files

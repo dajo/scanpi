@@ -3,3 +3,6 @@ scans/
 __pycache__/
 *.pyc
 .env
+
+# Environment-specific config - use docker-compose.yml.sample as template
+docker-compose.yml
