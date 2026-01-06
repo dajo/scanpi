@@ -161,10 +161,15 @@ EOF
         # Append image list (already has proper formatting with newlines)
         echo -n "${IMAGE_LIST}" >> "${OUTPUT_DIR}/config.yaml"
         # Add args with no_remove_to_continue (required settings that must be in job config)
+        # Disable auto_mask/auto_cut for web scans (full documents don't need cropping)
         cat >> "${OUTPUT_DIR}/config.yaml" << 'EOF'
 args:
   no_remove_to_continue: true
   tesseract:
+    enabled: false
+  auto_mask:
+    enabled: false
+  auto_cut:
     enabled: false
 EOF
         chmod 644 "${OUTPUT_DIR}/config.yaml"
